@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Incident Triage Agent</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Incident Triage & Safe Remediation Agent</h1>
+      <p>Plan, investigate, approve, remediate, and verify—with a complete decision trace.</p>
+    </div>
+    <span id="connection-status" class="badge">Checking API</span>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Report an incident</h2>
+      <form id="incident-form">
+        <label>Title
+          <input id="title" value="Checkout service 5xx spike" required />
+        </label>
+        <label>Description
+          <textarea id="description" required>Checkout is returning 5xx errors after the latest deployment. Database connections appear saturated.</textarea>
+        </label>
+        <div class="grid">
+          <label>Service
+            <input id="service" value="checkout-service" />
+          </label>
+          <label>Environment
+            <select id="environment">
+              <option value="production">production</option>
+              <option value="staging">staging</option>
+              <option value="development">development</option>
+            </select>
+          </label>
+          <label>Severity
+            <select id="severity">
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high" selected>high</option>
+              <option value="critical">critical</option>
+            </select>
+          </label>
+        </div>
+        <button type="submit">Start agent run</button>
+      </form>
+    </section>
+
+    <section id="run-panel" class="card hidden">
+      <div class="run-header">
+        <div>
+          <h2>Run <span id="run-id"></span></h2>
+          <p>Status: <span id="run-status" class="badge"></span></p>
+        </div>
+        <div id="approval-actions" class="hidden">
+          <button id="approve-button" class="primary">Approve remediation</button>
+          <button id="reject-button">Reject</button>
+        </div>
+      </div>
+
+      <div class="panels">
+        <div>
+          <h3>Agent timeline</h3>
+          <div id="timeline" class="timeline"></div>
+        </div>
+        <div>
+          <h3>Diagnosis & plan</h3>
+          <pre id="plan-output"></pre>
+        </div>
+        <div>
+          <h3>Evidence</h3>
+          <div id="evidence"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
