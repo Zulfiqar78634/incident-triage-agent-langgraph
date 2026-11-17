@@ -14,8 +14,10 @@ class DeterministicDiagnosisStrategy:
 
     def diagnose(self, context: dict[str, Any]) -> dict[str, Any]:
         evidence_text = str(context.get("evidence", [])).lower()
+        tool_text = str(context.get("recent_tool_calls", [])).lower()
+        combined_evidence = f"{evidence_text} {tool_text}"
 
-        if "database connection timeout" in evidence_text and "deploy-184" in evidence_text:
+        if "database connection timeout" in combined_evidence and "deploy-184" in combined_evidence:
             return {
                 "root_cause": "deployment_database_pool_regression",
                 "confidence": 0.86,
@@ -25,14 +27,14 @@ class DeterministicDiagnosisStrategy:
                 ),
             }
 
-        if "database connection timeout" in evidence_text:
+        if "database connection timeout" in combined_evidence:
             return {
                 "root_cause": "database_connection_saturation",
                 "confidence": 0.72,
                 "rationale": "Database connection saturation is present, but deployment correlation is unclear.",
             }
 
-        if "error_rate_percent" in evidence_text:
+        if "error_rate_percent" in combined_evidence:
             return {
                 "root_cause": "service_degradation",
                 "confidence": 0.58,
