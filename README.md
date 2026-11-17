@@ -2,7 +2,7 @@
 
 A production-oriented AI agent that triages platform incidents, investigates root causes with tools, proposes remediation, requires human approval for risky actions, and preserves a resumable decision trace.
 
-It is built with **Python, FastAPI, LangGraph, SQLite checkpointing, and a lightweight operator UI**. The project runs locally without an LLM API key: deterministic operational logic handles the core workflow. If `OPENAI_API_KEY` is configured, the LLM enriches diagnosis while the deterministic safety and approval boundaries remain in control.
+It is built with **Python, FastAPI, LangGraph, SQLite checkpointing, Google Gemini, and a lightweight operator UI**. The project runs locally without an API key: deterministic operational logic handles the core workflow. If `GEMINI_API_KEY` is configured, Gemini enriches diagnosis while the deterministic safety and approval boundaries remain in control.
 
 ## Why this use case
 
@@ -49,6 +49,7 @@ LangGraph Orchestrator
       +--> SQLite checkpoint store
       +--> SQLite run/event store
       +--> Mock platform tools
+      +--> Gemini diagnosis enrichment
 ```
 
 ## Agent workflow
@@ -77,18 +78,21 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure environment
+### 2. Configure Gemini
 
 ```bash
 cp .env.example .env
 ```
 
-The application works without an API key. To enable LLM-assisted diagnosis, add an OpenAI-compatible key:
+Open `.env` and add your Google AI Studio API key:
 
 ```env
-OPENAI_API_KEY=your-key
-OPENAI_MODEL=gpt-4o-mini
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.0-flash
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
 ```
+
+The application works without an API key. When `GEMINI_API_KEY` is present, Gemini is used for LLM-assisted diagnosis through Gemini’s OpenAI-compatible endpoint.
 
 ### 3. Run the application
 
@@ -168,7 +172,7 @@ Adding every log line, tool response, and historical event to the model context 
 
 ### Why deterministic fallback
 
-The core workflow is deterministic so the repository is runnable, testable, and safe to demonstrate without external credentials. The LLM is an enhancement layer, not the authority for whether a production mutation occurs.
+The core workflow is deterministic so the repository is runnable, testable, and safe to demonstrate without external credentials. Gemini is an enhancement layer, not the authority for whether a production mutation occurs.
 
 ## Security boundaries
 
@@ -193,7 +197,7 @@ The core workflow is deterministic so the repository is runnable, testable, and 
 
 ```text
 app/
-  agent/       LangGraph state, nodes, context, graph, and LLM enrichment
+  agent/       LangGraph state, nodes, context, graph, and Gemini enrichment
   api/         FastAPI runtime endpoints
   tools/       Tool registry, schemas, policies, and mock platform data
   storage/     Run and event persistence

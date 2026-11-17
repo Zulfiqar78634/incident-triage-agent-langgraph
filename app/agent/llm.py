@@ -1,8 +1,8 @@
-"""Optional LLM enrichment.
+"""Optional Gemini LLM enrichment.
 
 The agent remains fully functional without an API key by using deterministic
-operational rules. When OPENAI_API_KEY is configured, the LLM is used to
-produce a structured diagnosis and remediation rationale.
+operational rules. When GEMINI_API_KEY is configured, Gemini enriches the
+diagnosis while deterministic safety and approval boundaries remain in control.
 """
 
 from __future__ import annotations
@@ -12,21 +12,26 @@ from typing import Any
 
 import httpx
 
-from app.config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL
+from app.config import GEMINI_API_KEY, GEMINI_BASE_URL, GEMINI_MODEL
 
 
 def llm_json(system: str, user: str) -> dict[str, Any] | None:
-    """Call OpenAI-compatible chat completions and parse a JSON object."""
+    """Call Gemini through its OpenAI-compatible chat completions endpoint."""
 
-    if not OPENAI_API_KEY:
+    if not GEMINI_API_KEY:
         return None
+
+    url = f"{GEMINI_BASE_URL.rstrip('/')}/chat/completions"
 
     try:
         response = httpx.post(
-            f"{OPENAI_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            url,
+            headers={
+                "Authorization": f"Bearer {GEMINI_API_KEY}",
+                "Content-Type": "application/json",
+            },
             json={
-                "model": OPENAI_MODEL,
+                "model": GEMINI_MODEL,
                 "response_format": {"type": "json_object"},
                 "messages": [
                     {"role": "system", "content": system},
@@ -34,7 +39,7 @@ def llm_json(system: str, user: str) -> dict[str, Any] | None:
                 ],
                 "temperature": 0,
             },
-            timeout=20,
+            timeout=30,
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
