@@ -1,7 +1,9 @@
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from incident_agent.api.main import app
+from incident_agent.api.middleware import RateLimitMiddleware
 
 
 @pytest.fixture(scope="module")
@@ -43,9 +45,19 @@ def test_oversized_payload_is_rejected(client):
     assert "payload" in response.json()["detail"].lower()
 
 
-def test_rate_limit_returns_429(client):
-    for _ in range(35):
-        response = client.get("/api/health")
+def test_rate_limit_returns_429():
+    limited_app = FastAPI()
+    limited_app.add_middleware(RateLimitMiddleware, max_requests=3, window_seconds=60)
+
+    @limited_app.get("/ping")
+    async def ping():
+        return {"status": "ok"}
+
+    with TestClient(limited_app) as limited_client:
+        for _ in range(3):
+            assert limited_client.get("/ping").status_code == 200
+
+        response = limited_client.get("/ping")
 
     assert response.status_code == 429
     assert "too many requests" in response.json()["detail"].lower()

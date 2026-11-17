@@ -20,11 +20,13 @@ def select_evidence(evidence: list[dict[str, Any]], budget: int) -> list[dict[st
     selected: list[dict[str, Any]] = []
     used = 0
 
-    for item in reversed(evidence):
+    for item in evidence:
         tokens = estimate_tokens(item.get("content", ""))
+
         if used + tokens > budget:
             break
-        selected.insert(0, item)
+
+        selected.append(item)
         used += tokens
 
     return selected
