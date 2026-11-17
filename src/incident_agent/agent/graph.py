@@ -41,4 +41,7 @@ def build_graph(runtime: Runtime, checkpointer: BaseCheckpointSaver):
     builder.add_edge("execute", "verify")
     builder.add_edge("verify", END)
 
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile(
+        checkpointer=checkpointer,
+        interrupt_before=["approval_gate"],
+    )

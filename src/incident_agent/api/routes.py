@@ -6,7 +6,6 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from langgraph.types import Command
 
 from incident_agent.api.schemas import ApprovalRequest, IncidentCreate
 from incident_agent.core.events import make_event
@@ -18,13 +17,8 @@ def _config(run_id: str) -> dict[str, Any]:
     return {"configurable": {"thread_id": run_id}}
 
 
-def _persist(request: Request, run_id: str, result: dict[str, Any]) -> dict[str, Any]:
+def _persist(request: Request, run_id: str, state: dict[str, Any]) -> dict[str, Any]:
     runtime = request.app.state.runtime
-    state = {key: value for key, value in result.items() if not key.startswith("__")}
-
-    if result.get("__interrupt__"):
-        state["status"] = "awaiting_approval"
-
     runtime.repository.update_run(run_id, state)
     runtime.repository.append_events(run_id, state.get("events", []))
     return state
@@ -52,8 +46,16 @@ def create_run(request: Request, payload: IncidentCreate) -> dict[str, Any]:
     }
 
     runtime.repository.create_run(run_id, run_id, incident, initial_state)
-    result = graph.invoke(initial_state, config=_config(run_id))
-    state = _persist(request, run_id, result)
+    config = _config(run_id)
+    result = graph.invoke(initial_state, config=config)
+
+    state = {key: value for key, value in result.items() if not key.startswith("__")}
+    snapshot = graph.get_state(config)
+
+    if "approval_gate" in (snapshot.next or []):
+        state["status"] = "awaiting_approval"
+
+    state = _persist(request, run_id, state)
 
     return {
         "run_id": run_id,
@@ -127,14 +129,18 @@ def approve_run(request: Request, run_id: str, payload: ApprovalRequest) -> dict
             detail=f"Run is not awaiting approval; status={run['status']}",
         )
 
-    resume_value = {
+    config = _config(run_id)
+    decision = {
         "decision": payload.decision,
         "reason": payload.reason,
         "operator_id": payload.operator_id,
     }
 
-    result = graph.invoke(Command(resume=resume_value), config=_config(run_id))
-    state = _persist(request, run_id, result)
+    graph.update_state(config, {"approval_decision": decision})
+    result = graph.invoke(None, config=config)
+
+    state = {key: value for key, value in result.items() if not key.startswith("__")}
+    state = _persist(request, run_id, state)
 
     return {
         "run_id": run_id,

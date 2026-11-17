@@ -5,8 +5,6 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from langgraph.types import interrupt
-
 from incident_agent.agent.context import build_context, summarize_tool_result
 from incident_agent.application.container import Runtime
 from incident_agent.application.tool_registry import new_idempotency_key
@@ -15,7 +13,6 @@ from incident_agent.core.events import make_event
 
 def build_nodes(runtime: Runtime) -> dict[str, Any]:
     settings = runtime.settings
-    platform = runtime.platform
     tools = runtime.tools
     approval_policy = runtime.approval_policy
     retry_policy = runtime.retry_policy
@@ -212,27 +209,13 @@ def build_nodes(runtime: Runtime) -> dict[str, Any]:
         }
 
     def approval_gate(state: dict[str, Any]) -> dict[str, Any]:
-        plan = state.get("plan", {})
+        decision = state.get("approval_decision") or {}
+        approved = decision.get("decision") == "approved"
 
-        if not plan.get("requires_approval"):
-            return {"events": []}
-
-        decision = interrupt(
-            {
-                "type": "approval_required",
-                "action": plan["action"],
-                "arguments": plan["arguments"],
-                "risk": plan["risk"],
-                "rationale": plan["rationale"],
-                "evidence_ids": state.get("diagnosis", {}).get("evidence_ids", []),
-            }
-        )
-
-        approved = isinstance(decision, dict) and decision.get("decision") == "approved"
         approval = {
             "decision": "approved" if approved else "rejected",
-            "operator_id": decision.get("operator_id", "operator") if isinstance(decision, dict) else "operator",
-            "reason": decision.get("reason", "") if isinstance(decision, dict) else "",
+            "operator_id": decision.get("operator_id", "operator"),
+            "reason": decision.get("reason", ""),
         }
 
         if not approved:
