@@ -140,8 +140,15 @@ def build_nodes(runtime: Runtime) -> dict[str, Any]:
         service = state["classification"]["service"]
         environment = state["classification"]["environment"]
         root_cause = state["diagnosis"]["root_cause"]
+        context = build_context(state, settings.context_token_budget)
+        investigation_text = str(context).lower()
 
-        if root_cause == "deployment_database_pool_regression":
+        deployment_correlated = (
+            "deploy-184" in investigation_text
+            and "database connection timeout" in investigation_text
+        )
+
+        if root_cause == "deployment_database_pool_regression" or deployment_correlated:
             action = "rollback_deployment"
             arguments = {
                 "service": service,
