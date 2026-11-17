@@ -1,265 +1,88 @@
 # Incident Triage & Safe Remediation Agent
 
-A production-oriented AI agent that investigates platform incidents, explains its reasoning, proposes safe remediation, and waits for operator approval before executing any risky action.
+An end-to-end incident-response agent that investigates a service incident, identifies the likely root cause, recommends a safe remediation, pauses for operator approval, executes only approved actions, and verifies recovery.
 
-Built with **Python, FastAPI, LangGraph, SQLite checkpointing, Gemini, React, and TypeScript**.
+It is designed to demonstrate production-minded agent engineering: controlled autonomy, human-in-the-loop safety, inspectable decision trails, durable workflow state, and replaceable infrastructure.
 
-![Python](https://img.shields.io/badge/python-3.11-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi)
-![LangGraph](https://img.shields.io/badge/LangGraph-agent%20runtime-blue)
-![React](https://img.shields.io/badge/React-18-61dafb?logo=react)
-![Tests](https://img.shields.io/badge/tests-pytest-green)
+## What it does
 
----
+Given an incident such as:
 
-## What this project does
+> “Checkout service is returning 5xx errors after the latest deployment.”
 
-When an operator reports an incident, the agent:
+The agent:
 
-1. Understands and classifies the incident.
-2. Investigates using platform tools.
-3. Collects evidence from logs, metrics, deployments, and runbooks.
-4. Forms an evidence-based diagnosis.
-5. Proposes a remediation plan.
-6. Pauses for human approval before a risky action.
-7. Executes only the approved action.
-8. Verifies whether the service recovered.
-9. Shows a complete decision trace to the operator.
+1. Classifies the incident.
+2. Queries metrics, logs, service health, deployment history, and runbooks.
+3. Diagnoses the likely root cause.
+4. Recommends a remediation action.
+5. Requires operator approval before executing a production change.
+6. Executes the approved action.
+7. Verifies that the service recovered.
+8. Produces a complete event trace for auditability.
 
-The agent is autonomous during investigation, but it is **not allowed to silently change production state**.
+## Safety model
 
----
-
-## Live workflow
-
-```mermaid
-flowchart TD
-    A[Operator reports incident] --> B[Triage]
-    B --> C[Investigate]
-    C --> D[Diagnose]
-    D --> E[Plan remediation]
-    E --> F{Risky action?}
-    F -- Yes --> G[Approval gate]
-    G -- Approved --> H[Execute]
-    G -- Rejected --> I[Cancel]
-    F -- No --> H
-    H --> J[Verify recovery]
-    J --> K[Completed]
-    J --> L[Escalate]
-```
-
----
-
-## Why this use case?
-
-Platform teams need AI agents that reduce investigation time without creating operational risk.
-
-| Concern | How it is handled |
-|---|---|
-| Autonomy | The agent plans, selects tools, investigates, and diagnoses |
-| Safety | Rollback and restart require explicit operator approval |
-| Trust | Every decision is backed by evidence and visible in the UI |
-| Reliability | Workflow state is checkpointed and resumable |
-| Observability | Every agent step, tool call, and approval is traced |
-| Operator control | The operator can approve, reject, or request more investigation |
-
----
-
-## What you will see in the UI
-
-The operator console answers three questions:
-
-1. What is the agent doing now?
-2. Why did it make that decision?
-3. What action needs my approval?
-
-### 1. Start an incident
+The agent does not blindly execute LLM output.
 
 ```text
-┌──────────────────────────────────────────────────────┐
-│ Report an incident                                   │
-│                                                      │
-│ Title: Checkout service 5xx spike                    │
-│                                                      │
-│ Description:                                         │
-│ Checkout is returning 5xx errors after the latest    │
-│ deployment. Database connections appear saturated.   │
-│                                                      │
-│ Service: checkout-service                            │
-│ Environment: production                              │
-│ Severity: high                                       │
-│                                                      │
-│ [Load sample incident]  [Start agent run]            │
-└──────────────────────────────────────────────────────┘
+LLM assists diagnosis
+Deterministic workflow controls execution
+Approval policy requires human consent
+Tool validation protects arguments
+Verification confirms recovery
 ```
 
-Click **Load sample incident**, then click **Start agent run**.
+For the default checkout-service scenario, the agent identifies a deployment-related database connection regression and recommends rolling back from `v2.19.0` to `v2.18.3`.
 
-### 2. Watch the agent investigate
+The action is marked as requiring approval. Until an operator approves it, no rollback is executed.
 
-```text
-┌──────────────────────────────────────────────────────┐
-│ Run: run_01H...       Status: Investigating          │
-│                                                      │
-│ 1. Triage                     Completed              │
-│ 2. Investigate                Running                │
-│ 3. Diagnose                   Pending                │
-│ 4. Plan remediation           Pending                │
-│ 5. Approval                   Pending                │
-│ 6. Execute                    Pending                │
-│ 7. Verify recovery            Pending                │
-└──────────────────────────────────────────────────────┘
-```
+## Local prerequisites
 
-The agent calls read-only tools:
-
-```text
-query_metrics
-search_logs
-get_service_status
-get_deployment_history
-search_runbooks
-```
-
-### 3. See the diagnosis and evidence
-
-```text
-┌──────────────────────────────────────────────────────┐
-│ Agent reasoning                                      │
-│                                                      │
-│ The 5xx increase began after deploy-184. Logs show   │
-│ repeated database connection timeouts, and database  │
-│ connections reached 100/100. The previous version    │
-│ was stable, so rollback is the lowest-risk recovery  │
-│ action.                                              │
-│                                                      │
-│ Confidence: 86%                                      │
-└──────────────────────────────────────────────────────┘
-```
-
-Evidence cards show exactly what the agent used:
-
-```text
-EV-01 · query_metrics
-Error rate: 18.4%
-p99 latency: 2740 ms
-Database connections: 100/100
-
-EV-02 · search_logs
-Database connection timeout detected
-Correlation ID: req_8842
-
-EV-03 · get_deployment_history
-deploy-184 shipped v2.18.4
-Changed database pool configuration
-```
-
-### 4. Approve the remediation
-
-```text
-┌──────────────────────────────────────────────────────┐
-│ Approval required                                    │
-│                                                      │
-│ Proposed action: rollback_deployment                 │
-│ Service: checkout-service                            │
-│ From: v2.18.4                                        │
-│ To: v2.18.3                                          │
-│ Risk: HIGH                                           │
-│                                                      │
-│ Reason:                                              │
-│ The 5xx increase began after deploy-184 and database │
-│ connections reached their limit. Rolling back to the │
-│ previously stable version is the lowest-risk action. │
-│                                                      │
-│ [Approve remediation]  [Reject]                      │
-└──────────────────────────────────────────────────────┘
-```
-
-### 5. Verify recovery
-
-```text
-┌──────────────────────────────────────────────────────┐
-│ Executing rollback...                                │
-│ Rollback completed.                                  │
-│                                                      │
-│ Verifying recovery...                                │
-│ Error rate: 0.3%                                     │
-│ Service status: healthy                              │
-│                                                      │
-│ Result: Recovered                                    │
-└──────────────────────────────────────────────────────┘
-```
-
----
-
-## Run it locally
-
-### Prerequisites
-
-Install:
-
-- Python 3.11+
-- Node.js 18+
-- npm
+- Python 3.11 or newer
+- Node.js 18 or newer
 - Git
+- Optional: Gemini API key
 
-Check versions:
+The project runs locally without a database server, Docker, Kubernetes, or cloud credentials.
 
-```bash
-python --version
-node --version
-npm --version
-git --version
-```
-
-### 1. Clone the repository
+## Clone and run backend
 
 ```bash
 git clone https://github.com/Zulfiqar78634/incident-triage-agent-langgraph.git
 cd incident-triage-agent-langgraph
-```
 
-### 2. Start the backend
-
-```bash
 python -m venv .venv
 source .venv/bin/activate
 
-# Windows PowerShell:
-# .venv\Scripts\activate
-
 pip install -r requirements.txt
-```
 
-Create your local environment file:
-
-```bash
-cp .env.example .env
-```
-
-Open `.env` and add your Gemini API key:
-
-```env
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-2.0-flash
-GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-```
-
-Start the backend:
-
-```bash
 uvicorn incident_agent.api.main:app --app-dir src --reload --port 8000
 ```
 
-Backend URL:
+The API will be available at:
 
 ```text
 http://localhost:8000
 ```
 
-### 3. Start the operator UI
+## Optional Gemini setup
 
-Open a **new terminal**:
+Gemini is optional. Without an API key, the agent uses deterministic diagnosis and remains fully functional.
+
+To enable Gemini enrichment:
+
+```bash
+export GEMINI_API_KEY="your_api_key"
+```
+
+Then restart the backend.
+
+The LLM is used only to improve diagnosis reasoning. It does not directly execute production actions.
+
+## Run frontend
+
+In a separate terminal:
 
 ```bash
 cd frontend
@@ -273,21 +96,55 @@ Open:
 http://localhost:5173
 ```
 
-### 4. Run the demo
+## End-to-end demo
 
-1. Click **Load sample incident**.
-2. Click **Start agent run**.
-3. Watch the agent investigate.
-4. Review the evidence and diagnosis.
-5. Approve the proposed rollback.
-6. Watch execution and verification.
-7. See the final `Completed` status.
+1. Start the backend and frontend.
+2. Open the operator UI.
+3. Create an incident for `checkout-service`.
+4. Use this example:
 
----
+```text
+Title: Checkout service 5xx spike
+Description: Checkout is returning 5xx errors after the latest deployment.
+Service: checkout-service
+Environment: production
+Severity: high
+```
 
-## Test the API directly
+5. Start the run.
+6. Observe the agent:
 
-### Start a run
+```text
+Triage
+→ Investigate
+→ Diagnose
+→ Plan
+→ Awaiting approval
+```
+
+7. Review the evidence, diagnosis, and proposed rollback.
+8. Approve the action.
+9. Observe:
+
+```text
+Rollback executes
+→ Metrics recover
+→ Service becomes healthy
+→ Verification succeeds
+→ Run completes
+```
+
+10. Open the event trace to inspect every decision and tool result.
+
+## API reference
+
+### Health check
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+### Create incident run
 
 ```bash
 curl -X POST http://localhost:8000/api/runs \
@@ -298,19 +155,23 @@ curl -X POST http://localhost:8000/api/runs \
     "service": "checkout-service",
     "environment": "production",
     "severity": "high",
-    "operator_id": "ops-alice"
+    "operator_id": "operator"
   }'
 ```
 
-Copy the `run_id` from the response.
-
-### Check the run
+### Get run state
 
 ```bash
 curl http://localhost:8000/api/runs/{run_id}
 ```
 
-### Approve the rollback
+### Get event trace
+
+```bash
+curl http://localhost:8000/api/runs/{run_id}/events
+```
+
+### Approve remediation
 
 ```bash
 curl -X POST http://localhost:8000/api/runs/{run_id}/approve \
@@ -318,174 +179,23 @@ curl -X POST http://localhost:8000/api/runs/{run_id}/approve \
   -d '{
     "decision": "approved",
     "reason": "Deployment correlation and DB saturation support rollback.",
-    "operator_id": "ops-alice"
+    "operator_id": "operator"
   }'
 ```
 
-### View the event trace
+### Reject remediation
 
 ```bash
-curl http://localhost:8000/api/runs/{run_id}/events
+curl -X POST http://localhost:8000/api/runs/{run_id}/approve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "decision": "rejected",
+    "reason": "Do not execute this action.",
+    "operator_id": "operator"
+  }'
 ```
 
----
-
-## Architecture
-
-```mermaid
-flowchart TD
-    UI[Operator UI] --> API[FastAPI Agent Runtime]
-    API --> GRAPH[LangGraph Agent Runtime]
-    GRAPH --> T[Triage]
-    T --> I[Investigate]
-    I --> D[Diagnose]
-    D --> P[Plan]
-    P --> A[Approval Gate]
-    A --> E[Execute]
-    E --> V[Verify]
-
-    GRAPH --> DB[(SQLite checkpoints)]
-    GRAPH --> REPO[(SQLite run/event store)]
-    GRAPH --> LLM[Gemini diagnosis enrichment]
-    GRAPH --> TOOLS[Platform tools]
-```
-
----
-
-## Project structure
-
-```text
-incident-triage-agent-langgraph/
-├── src/
-│   └── incident_agent/
-│       ├── core/                     # Settings, events, result types
-│       ├── domain/                   # Incident, evidence, diagnosis models
-│       ├── application/              # Ports, policies, tool registry, DI
-│       ├── agent/                    # LangGraph state, graph, nodes, context
-│       ├── infrastructure/           # Gemini, mock platform, SQLite
-│       ├── api/                      # FastAPI routes and schemas
-│       └── observability/            # Tracing and metrics
-│
-├── frontend/
-│   └── src/
-│       ├── components/               # Operator UI components
-│       ├── hooks/                    # Run state and polling hooks
-│       ├── api/                      # Backend client
-│       └── types/                    # Shared TypeScript types
-│
-├── tests/
-│   ├── unit/
-│   └── integration/
-│
-├── docs/
-│   ├── system_design.md
-│   ├── architecture.md
-│   ├── lld_agent_state.md
-│   ├── lld_workflow.md
-│   ├── lld_tools.md
-│   ├── lld_context_memory.md
-│   ├── lld_api.md
-│   ├── lld_observability.md
-│   ├── lld_security.md
-│   └── lld_scaling.md
-│
-├── ai_usage/
-│   └── AI_INTERACTION_LOG.md
-│
-├── README.md
-├── pyproject.toml
-├── requirements.txt
-├── Makefile
-└── .env.example
-```
-
----
-
-## Engineering principles
-
-### SOLID
-
-| Principle | Implementation |
-|---|---|
-| Single Responsibility | Each LangGraph node has one clear job |
-| Open/Closed | New tools or LLM providers can be added without changing the workflow |
-| Liskov Substitution | Gemini and no-key LLM clients implement the same interface |
-| Interface Segregation | Separate ports for platform tools, LLM, and persistence |
-| Dependency Inversion | Agent and API depend on interfaces, not concrete infrastructure |
-
-### Design patterns
-
-- **Strategy:** deterministic and Gemini diagnosis strategies
-- **Registry:** tools registered with metadata, risk, and approval policy
-- **Repository:** run and event persistence behind an interface
-- **Dependency Injection:** central application container
-- **Policy:** approval and retry rules separated from workflow logic
-- **Facade:** tool executor hides validation, retries, and audit concerns
-- **Observer:** structured event stream for observability
-- **State Machine:** LangGraph models the incident workflow explicitly
-
----
-
-## Context engineering
-
-The agent does not put everything into the model context.
-
-```text
-Context budget
-├── System policy: always retained
-├── Incident objective: always retained
-├── Current diagnosis and plan: always retained
-├── Evidence: selected by relevance and budget
-├── Tool output: summarized or truncated
-├── Conversation: recent turns retained
-└── Long-term memory: relevant facts only
-```
-
----
-
-## Safety model
-
-```mermaid
-flowchart LR
-    A[Read-only investigation tools] --> B[Autonomous execution]
-    C[High-risk mutating tools] --> D[Approval required]
-    D --> E[Approved action]
-    E --> F[Idempotency key]
-    F --> G[Execution]
-    G --> H[Verification]
-```
-
-The approval gate is implemented as a LangGraph interrupt, not a prompt instruction.
-
----
-
-## Observability
-
-Every run records:
-
-```text
-run_started
-node_entered
-node_completed
-tool_call_started
-tool_call_completed
-tool_call_failed
-tool_call_retried
-approval_requested
-approval_granted
-approval_rejected
-action_executed
-verification_completed
-run_completed
-run_failed
-escalated
-```
-
----
-
-## Tests
-
-Run all tests:
+## Run tests
 
 ```bash
 pytest -q
@@ -493,55 +203,85 @@ pytest -q
 
 Tests cover:
 
-- Incident classification.
-- Tool execution.
-- Evidence-based diagnosis.
-- Approval gate behavior.
-- Approval resume.
+- API health.
+- Incident creation.
+- Approval interruption.
+- Approved rollback execution.
+- Post-action verification.
 - Rejection safety.
-- Context budgeting.
-- Restart and resume behavior.
 
----
+## Architecture
 
-## Enterprise target architecture
-
-The submitted implementation is intentionally focused on a reliable, locally runnable agent runtime.
-
-For enterprise scale, the same design would evolve into:
-
-```mermaid
-flowchart TD
-    UI[Operator Console] --> GW[API Gateway]
-    GW --> ORCH[Agent Orchestration Service]
-    ORCH --> SUP[Supervisor Agent]
-    SUP --> W1[Investigation Worker]
-    SUP --> W2[Diagnosis Worker]
-    SUP --> W3[Remediation Worker]
-    W1 --> TG[Tool Gateway]
-    W2 --> MEM[Memory Store]
-    W3 --> OBS[Observability Stack]
-    TG --> CLOUD[Cloud / Kubernetes / CI-CD]
+```text
+React operator UI
+        |
+FastAPI interface
+        |
+LangGraph agent runtime
+        |
+Application policies, ports, tool registry
+        |
+Infrastructure adapters
 ```
 
-These enterprise components are documented as the production roadmap, not claimed as part of the local assessment implementation.
+Core components:
 
----
+- **LangGraph workflow:** explicit incident lifecycle and durable state.
+- **FastAPI:** runtime API for runs, events, approvals, and health.
+- **SQLite:** local persistence for checkpoints, run state, and events.
+- **Mock platform:** logs, metrics, deployments, service health, and remediation APIs.
+- **Gemini adapter:** optional diagnosis enrichment.
+- **Approval policy:** human-in-the-loop safety boundary.
+- **Tool registry:** validated tool metadata and execution.
+- **React UI:** operator visibility and approval workflow.
 
-## What I would build next
+## Technology decisions
 
-- Replace mock tools with real cloud, Kubernetes, and observability APIs.
-- Add Postgres-backed durable execution.
-- Add role-based access control and tool authorization.
-- Add LangSmith or Langfuse tracing.
-- Add a golden-set evaluation suite and CI quality gates.
-- Add multi-agent supervisor/worker execution.
-- Add memory lifecycle policies, redaction, and operator-editable memory.
+| Decision | Reason |
+|---|---|
+| Python | Strong AI/backend ecosystem and readable agent logic |
+| FastAPI | Clean, lightweight runtime API |
+| LangGraph | Explicit workflow, interrupts, checkpoints, and resumable execution |
+| SQLite | Zero-setup local persistence |
+| Gemini | Natural-language diagnosis enrichment |
+| React | Operator-friendly UI |
+| TypeScript | Type-safe frontend integration |
+| Vite | Fast local frontend development |
+| Pydantic | Strict validation of API and tool inputs |
+| Pytest | Reliable workflow and safety tests |
 
----
+See `docs/technology_decisions.md` for the full decision record.
 
-## AI usage
+## Interview explanation
 
-AI was used to accelerate scaffolding, implementation, documentation, and test design. Architectural decisions, safety boundaries, and production trade-offs were reviewed as part of the implementation.
+> “I built an incident-remediation agent that investigates an incident, forms a diagnosis, recommends a remediation, and pauses for explicit human approval before executing a production change. I used LangGraph because the workflow needs durable state, controlled branching, interrupts, and resumability. I used FastAPI to expose the agent as a runtime service. I used SQLite locally so the project runs without infrastructure setup, while keeping persistence behind a repository interface so Postgres can replace it later. Gemini enriches diagnosis, but it does not control safety: deterministic policy, validation, approval, and verification remain authoritative.”
 
-See `ai_usage/AI_INTERACTION_LOG.md`.
+## Troubleshooting
+
+### Backend will not start
+
+Ensure you are in the repository root and have activated the virtual environment:
+
+```bash
+source .venv/bin/activate
+uvicorn incident_agent.api.main:app --app-dir src --reload --port 8000
+```
+
+### Frontend cannot reach backend
+
+Confirm the backend is running on port 8000.
+
+### Gemini is unavailable
+
+The system still works with deterministic diagnosis. Gemini is optional.
+
+### Tests fail
+
+Run:
+
+```bash
+pip install -r requirements.txt
+pytest -q
+```
+
+Ensure no other process is using port 8000.
