@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from incident_agent.api.middleware import add_guardrails
-from incident_agent.api.routes import create_router
+from incident_agent.api.routes import router
 from incident_agent.application.container import build_runtime
 
 
@@ -17,12 +17,9 @@ def create_app() -> FastAPI:
         description="Controlled incident-response agent with human-in-the-loop remediation.",
     )
 
+    app.state.runtime = runtime
     add_guardrails(app)
-    app.include_router(create_router(runtime))
-
-    @app.get("/api/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
+    app.include_router(router)
 
     return app
 
