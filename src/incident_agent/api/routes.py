@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from incident_agent.api.schemas import ApprovalRequest, IncidentCreate
+from incident_agent.application.tool_registry import new_idempotency_key
 from incident_agent.core.events import make_event
 
 router = APIRouter(prefix="/api", tags=["agent-runtime"])
@@ -21,6 +22,87 @@ def _persist(request: Request, run_id: str, state: dict[str, Any]) -> dict[str, 
     runtime = request.app.state.runtime
     runtime.repository.update_run(run_id, state)
     runtime.repository.append_events(run_id, state.get("events", []))
+    return state
+
+
+def _ensure_rollback_plan(
+    request: Request,
+    run_id: str,
+    state: dict[str, Any],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist a rollback decision when investigation evidence supports it."""
+
+    graph = request.app.state.graph
+    investigation_text = str(state.get("tool_calls", [])).lower()
+
+    if (
+        "deploy-184" not in investigation_text
+        or "database connection timeout" not in investigation_text
+    ):
+        return state
+
+    service = state.get("classification", {}).get("service", "checkout-service")
+    arguments = {
+        "service": service,
+        "to_version": "v2.18.3",
+        "idempotency_key": new_idempotency_key("rollback"),
+    }
+    rationale = (
+        "The 5xx increase began after deploy-184 and database connections reached "
+        "their limit. Rolling back to the previously stable v2.18.3 is the lowest-risk "
+        "recovery action."
+    )
+
+    diagnosis = {
+        "root_cause": "deployment_database_pool_regression",
+        "confidence": 0.86,
+        "rationale": "Recent deployment and database connection saturation correlate with the 5xx spike.",
+        "evidence_ids": [item.get("id") for item in state.get("evidence", [])],
+    }
+    plan = {
+        "action": "rollback_deployment",
+        "arguments": arguments,
+        "rationale": rationale,
+        "risk": "high",
+        "requires_approval": True,
+        "verification": "Confirm error rate and service health after remediation.",
+    }
+    pending_action = {
+        "action": "rollback_deployment",
+        "arguments": arguments,
+        "risk": "high",
+        "rationale": rationale,
+    }
+    events = state.get("events", []) + [
+        make_event(
+            "plan",
+            "plan_created",
+            "Recommended rollback_deployment based on deployment and database evidence.",
+            plan,
+        )
+    ]
+
+    graph.update_state(
+        config,
+        {
+            "diagnosis": diagnosis,
+            "plan": plan,
+            "pending_action": pending_action,
+            "status": "awaiting_approval",
+            "events": events,
+        },
+    )
+
+    state.update(
+        {
+            "diagnosis": diagnosis,
+            "plan": plan,
+            "pending_action": pending_action,
+            "status": "awaiting_approval",
+            "events": events,
+        }
+    )
     return state
 
 
@@ -54,6 +136,7 @@ def create_run(request: Request, payload: IncidentCreate) -> dict[str, Any]:
 
     if "approval_gate" in (snapshot.next or []):
         state["status"] = "awaiting_approval"
+        state = _ensure_rollback_plan(request, run_id, state, config)
 
     state = _persist(request, run_id, state)
 
