@@ -21,6 +21,10 @@ def _config(run_id: str) -> dict[str, Any]:
 def _persist(request: Request, run_id: str, result: dict[str, Any]) -> dict[str, Any]:
     runtime = request.app.state.runtime
     state = {key: value for key, value in result.items() if not key.startswith("__")}
+
+    if result.get("__interrupt__"):
+        state["status"] = "awaiting_approval"
+
     runtime.repository.update_run(run_id, state)
     runtime.repository.append_events(run_id, state.get("events", []))
     return state
