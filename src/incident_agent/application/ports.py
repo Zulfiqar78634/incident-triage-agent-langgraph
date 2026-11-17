@@ -1,0 +1,43 @@
+"""Primary ports (interfaces) that the agent and API depend on."""
+
+from __future__ import annotations
+
+from typing import Any, Protocol
+
+
+class PlatformClient(Protocol):
+    """Operational platform capabilities used by the agent."""
+
+    def search_logs(self, service: str, query: str = "", limit: int = 10) -> dict[str, Any]: ...
+
+    def query_metrics(self, service: str, window_minutes: int = 15) -> dict[str, Any]: ...
+
+    def get_service_status(self, service: str) -> dict[str, Any]: ...
+
+    def get_deployment_history(self, service: str, limit: int = 5) -> dict[str, Any]: ...
+
+    def search_runbooks(self, query: str) -> dict[str, Any]: ...
+
+    def rollback_deployment(self, service: str, to_version: str, idempotency_key: str) -> dict[str, Any]: ...
+
+    def restart_service(self, service: str, idempotency_key: str) -> dict[str, Any]: ...
+
+
+class LLMClient(Protocol):
+    """LLM diagnosis enrichment boundary."""
+
+    def diagnose(self, context: dict[str, Any]) -> dict[str, Any] | None: ...
+
+
+class RunRepository(Protocol):
+    """Persistence boundary for run metadata and event streams."""
+
+    def create_run(self, run_id: str, thread_id: str, incident: dict[str, Any], state: dict[str, Any]) -> None: ...
+
+    def update_run(self, run_id: str, state: dict[str, Any]) -> None: ...
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None: ...
+
+    def append_events(self, run_id: str, events: list[dict[str, Any]]) -> None: ...
+
+    def get_events(self, run_id: str) -> list[dict[str, Any]]: ...
