@@ -13,7 +13,7 @@ from incident_agent.application.container import build_runtime
 
 def create_app() -> FastAPI:
     runtime = build_runtime()
-    checkpointer = SqliteSaver.from_conn_string(runtime.repository._connection)
+    checkpointer = SqliteSaver(runtime.repository._connection)
     graph = build_graph(runtime, checkpointer)
 
     app = FastAPI(
